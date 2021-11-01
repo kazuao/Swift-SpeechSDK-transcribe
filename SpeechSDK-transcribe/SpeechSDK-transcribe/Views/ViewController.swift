@@ -123,7 +123,7 @@ private extension ViewController {
          - .notifyOthersOnDeactivation: 無効になったことをシステムが他のアプリに通知する必要があることを示す
          */
         try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
-        // 指定した
+        // シングルトン入力オーディオノード
         let inputNode = audioEngine.inputNode
 
         // 音声認識リクエストの構成
@@ -131,12 +131,14 @@ private extension ViewController {
         guard let recognitionRequest = recognitionRequest else {
             fatalError("Unable to create a SFSpeechAudioBufferRecognitionRequest object")
         }
+        // 発話ごとに中間結果を返すか
         recognitionRequest.shouldReportPartialResults = true
 
-        // 音声認識データをデバイスに保持する
+        // 音声認識データをデバイスに保持するか
         recognitionRequest.requiresOnDeviceRecognition = false
 
         // 認識タスクの作成、タスクへの参照を保持し、キャンセルできるようにする
+        // recognitionTask: 認識プロセスの開始
         recognitionTask = speechRecognizer.recognitionTask(with: recognitionRequest) { result, error in
             var isFinal = false
 
@@ -150,6 +152,7 @@ private extension ViewController {
             if error != nil || isFinal {
                 // 問題があったら停止
                 self.audioEngine.stop()
+                // 指定したバスのオーディオタップを削除する
                 inputNode.removeTap(onBus: 0)
 
                 self.recognitionRequest = nil
@@ -161,8 +164,15 @@ private extension ViewController {
         }
 
         // マイク設定
+        // 指定したバスの出力形式の取得
         let recordingFormat = inputNode.outputFormat(forBus: 0)
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { (buffer: AVAudioPCMBuffer, when: AVAudioTime) in
+        // 指定したバスにオーディオタップをインストールし、
+        // ノードの出力を録音、監視する
+        inputNode.installTap(onBus: 0,
+                             bufferSize: 1024,
+                             format: recordingFormat) { (buffer: AVAudioPCMBuffer,
+                                                         when: AVAudioTime) in
+            // メインスレッド以外で呼ばれる場合もある
             self.recognitionRequest?.append(buffer)
         }
 
@@ -178,7 +188,9 @@ private extension ViewController {
 // MARK: - SFSpeechRecognizerDelegate
 extension ViewController: SFSpeechRecognizerDelegate {
 
-    func speechRecognizer(_ speechRecognizer: SFSpeechRecognizer, availabilityDidChange available: Bool) {
+    func speechRecognizer(_ speechRecognizer: SFSpeechRecognizer,
+                          availabilityDidChange available: Bool)
+    {
         if available {
             recordButton.isEnabled = true
             recordButton.setTitle("Start Recording!", for: [])
